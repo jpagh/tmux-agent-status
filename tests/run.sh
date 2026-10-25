@@ -188,11 +188,18 @@ case "$(tm list-keys -T prefix | grep ' a ')" in *"agent-status' open"*) ok "key
 as "$P1" clear
 
 echo "exec-wrapped agents and no client"
-tm respawn-pane -k -t "$PSH" "exec -a 'bun /opt/x/node_modules/.bin/pi' sleep 600"; sleep 0.3
+# A real launcher execs with argv[0] = runtime and argv[1] = script path
+# ("bun /path/.bin/pi"). `exec -a 'bun /path' sleep` is not portable: macOS
+# reports ps comm as argv[0] truncated to 16 characters, spaces included, which
+# desynchronizes the comm/args split the parser relies on. Use a FIFO so the
+# path is really argv[1] and the process blocks in open(2).
+mkdir -p "$T/x/node_modules/.bin"
+mkfifo "$T/x/node_modules/.bin/pi" "$T/x/pi"
+tm respawn-pane -k -t "$PSH" "exec -a bun cat '$T/x/node_modules/.bin/pi'"; sleep 0.3
 eq "exec-wrapped agent found by script basename" "$(as "$P1" list | grep "^$PSH" | grep -c pi)" "1"
-tm respawn-pane -k -t "$PSH" "exec -a 'vim notes/pi' sleep 600"; sleep 0.3
+tm respawn-pane -k -t "$PSH" "exec -a vim cat '$T/x/node_modules/.bin/pi'"; sleep 0.3
 eq "any runtime + path operand with agent basename is found" "$(as "$P1" list | grep -c "^$PSH")" "1"
-tm respawn-pane -k -t "$PSH" "exec -a 'grep pi' sleep 600"; sleep 0.3
+tm respawn-pane -k -t "$PSH" "cd '$T/x' && exec -a grep cat pi"; sleep 0.3
 eq "bare argv word is not matched" "$(as "$P1" list | grep -c "^$PSH")" "0"
 tm respawn-pane -k -t "$PSH" "bash --norc -i"; sleep 0.3
 tm -L "$SOCKNAME-nc" -f /dev/null new-session -d "sleep 60"
